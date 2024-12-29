@@ -101,7 +101,7 @@ services:
       RESPONSE_QUEUE: query_responses
       RABBITMQ_USER: admin
       RABBITMQ_PASSWORD: admin
-      GOOGLE_API_KEY: AIzaSyAQGnVDL9PjTSK5pEcwtVbPKARcFI2qFyI
+      GOOGLE_API_KEY: "your api key"
     depends_on:
       - rabbitmq
     networks:
