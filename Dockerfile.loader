@@ -1,0 +1,21 @@
+# Use an official Python runtime as a parent image
+FROM python:3.11
+
+# Set environment variables to prevent Python from writing .pyc files and buffering stdout/stderr
+ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE 1
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the requirements.txt file into the container
+COPY requirements.txt /app/
+
+# Install the necessary dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the script and any other necessary files into the container
+COPY . /app/
+
+# Define the command to run the script
+CMD ["python", "doc_loader.py"]

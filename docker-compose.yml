@@ -1,0 +1,151 @@
+version: '3.5'
+
+services:
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  standalone:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.2.16
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - "etcd"
+      - "minio"
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"  # RabbitMQ messaging port
+      - "15672:15672"  # RabbitMQ management console
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - default
+
+  grpc-server:
+    container_name: grpc-server
+    build:
+      context: .
+      dockerfile: Dockerfile.grpc
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - REQUEST_QUEUE=query_requests
+      - RESPONSE_QUEUE=query_responses
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=admin
+    ports:
+      - "50051:50051"  # gRPC server port
+    depends_on:
+      - "rabbitmq"
+    networks:
+      - default
+
+  rag-consumer:
+    container_name: rag-consumer
+    build:
+      context: .
+      dockerfile: Dockerfile.rag_consumer
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      REQUEST_QUEUE: query_requests
+      RESPONSE_QUEUE: query_responses
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin
+      GOOGLE_API_KEY: AIzaSyAQGnVDL9PjTSK5pEcwtVbPKARcFI2qFyI
+    depends_on:
+      - rabbitmq
+    networks:
+      - default
+
+  fastapi-service:
+    container_name: fastapi-service
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi  # Dockerfile for FastAPI service (main.py)
+    environment:
+      GRPC_HOST: http://grpc-server:50051
+    ports:
+      - "8000:8000"  # Exposing FastAPI port
+    depends_on:
+      - grpc-server
+    networks:
+      - default
+
+  streamlit_client:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit_client
+    environment:
+      FASTAPI_BASE_URL: http://fastapi-service:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fastapi-service  # Now depends on FastAPI service
+    networks:
+      - default
+
+  doc-loader:
+    container_name: doc-loader
+    build:
+      context: .
+      dockerfile: Dockerfile.loader  # The Dockerfile for the PDF processing script
+    volumes:
+      - ./book:/app/book  # Make the PDF directory available to the container
+    networks:
+      - default
+    command: [ "python", "doc_loader.py" ]
+
+
+networks:
+  default:
+    name: milvus

@@ -1,0 +1,17 @@
+# Base Python image
+FROM python:3.11
+
+# Set the working directory
+WORKDIR /app
+
+# Copy the application code
+COPY . .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the RabbitMQ consumer port (if needed, otherwise skip)
+EXPOSE 5672
+
+# Set the default command to run the script
+CMD ["python", "query_processor.py"]

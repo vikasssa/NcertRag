@@ -1,0 +1,20 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+service QueryService {
+  rpc SubmitQuery (QueryRequest) returns (QueryResponse);
+  rpc GetQueryResponse (google.protobuf.Empty) returns (stream QueryResult);
+}
+
+message QueryRequest {
+  string query = 1;
+}
+
+message QueryResponse {
+  string query_id = 1;
+}
+
+message QueryResult {
+  string query_id = 1;
+  string result = 2;
+}
